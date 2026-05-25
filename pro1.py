@@ -1,0 +1,562 @@
+import time
+import random
+import re
+import sys
+from datetime import datetime
+from collections import defaultdict
+class Color:
+    RESET = "\033[0m"
+    BOLD = "\033[1m"
+    DIM = "\033[2m"
+    CYAN = "\033[96m"
+    BLUE = "\033[94m"
+    GREEN = "\033[92m"
+    YELLOW = "\033[93m"
+    RED = "\033[91m"
+    MAGENTA = "\033[95m"
+    WHITE = "\033[97m"
+    GRAY = "\033[90m"
+KNOWLEDGE_BASE = {
+    "greet": {
+        "keywords": ["hello", "hi", "hey", "sup", "yo", "howdy", "hiya", "greetings"],
+        "responses": [
+            "Hey there! I'm DecoBot — your AI assistant at DecodeLabs. What's on your mind?",
+            "Hello! Ready to talk AI? Ask me anything.",
+            "Hi! DecoBot online. How can I help you today?",
+        ],
+        "category": "social",
+    },
+    "good_morning": {
+        "keywords": ["good morning", "morning"],
+        "responses": [
+            "Good morning! Ready to build something great today?",
+            "Morning! Coffee in hand? Let's talk AI.",
+        ],
+        "category": "social",
+    },
+    "good_night": {
+        "keywords": ["good night", "goodnight", "night night"],
+        "responses": [
+            "Good night! Rest up — big projects await tomorrow.",
+            "Sleep well! Every great engineer needs rest.",
+        ],
+        "category": "social",
+    },
+    "identity": {
+        "keywords": ["who are you", "what are you", "your name", "introduce yourself", "tell me about yourself"],
+        "responses": [
+            "I'm DecoBot — a rule-based AI chatbot built at DecodeLabs. I use a hash map for O(1) lookups, not deep learning. No hallucinations, 100% deterministic.",
+            "I'm DecoBot v2.0 — a deterministic AI assistant. Every response I give is traceable: input → logic → output. No black boxes here.",
+        ],
+        "category": "identity",
+    },
+    "what_is_ai": {
+        "keywords": ["what is ai", "define ai", "artificial intelligence", "what is artificial intelligence"],
+        "responses": [
+            "Artificial Intelligence (AI) is the science of making machines simulate human intelligence — reasoning, learning, problem-solving, and language understanding.",
+            "AI is an umbrella field where machines are designed to perform tasks that normally require human intelligence, like recognizing speech, translating language, or making decisions.",
+        ],
+        "category": "ai_knowledge",
+    },
+    "machine_learning": {
+        "keywords": ["machine learning", "what is ml", "ml", "what is machine learning"],
+        "responses": [
+            "Machine Learning (ML) is a subset of AI where models learn patterns from data instead of following hand-coded rules. Think of it as teaching by example, not by instruction.",
+            "ML lets systems improve automatically through experience. Instead of writing rules, you feed the algorithm data and it discovers the rules itself.",
+        ],
+        "category": "ai_knowledge",
+    },
+    "deep_learning": {
+        "keywords": ["deep learning", "neural networks", "what is deep learning", "what are neural networks"],
+        "responses": [
+            "Deep Learning uses multi-layered neural networks inspired by the human brain. It powers image recognition, ChatGPT, and self-driving cars. It needs massive data and compute.",
+            "Deep Learning is ML on steroids — stacked layers of artificial neurons that can learn incredibly complex patterns. It's the engine behind modern LLMs like GPT and Claude.",
+        ],
+        "category": "ai_knowledge",
+    },
+    "rule_based": {
+        "keywords": ["rule based", "rule-based", "rule based system", "what is a rule-based system", "rule based ai"],
+        "responses": [
+            "A rule-based system is the 'white box' of AI — explicit if/else logic where every decision is traceable. Zero hallucination risk. Used heavily in compliance, healthcare, and banking.",
+            "Rule-based AI uses deterministic logic: input → rules → output. Unlike LLMs, every answer is 100% predictable. That's both its strength and its limitation.",
+        ],
+        "category": "ai_knowledge",
+    },
+    "llm": {
+        "keywords": ["llm", "large language model", "what is llm", "gpt", "chatgpt", "what is chatgpt"],
+        "responses": [
+            "A Large Language Model (LLM) is a probabilistic AI trained on billions of text tokens. It predicts the next word given context. GPT-4, Claude, and Gemini are examples.",
+            "LLMs like ChatGPT are 'black box' artists — incredibly creative and flexible, but can hallucinate. That's why rule-based guardrails (like what you're building!) are layered on top.",
+        ],
+        "category": "ai_knowledge",
+    },
+    "nlp": {
+        "keywords": ["nlp", "natural language processing", "what is nlp"],
+        "responses": [
+            "Natural Language Processing (NLP) is the branch of AI that deals with human language — parsing, understanding, and generating text or speech.",
+            "NLP bridges the gap between human communication and machine understanding. Tokenization, sentiment analysis, and named entity recognition are core NLP tasks.",
+        ],
+        "category": "ai_knowledge",
+    },
+    "python": {
+        "keywords": ["python", "why python", "python for ai"],
+        "responses": [
+            "Python dominates AI/ML because of its clean syntax, massive ecosystem (NumPy, Pandas, PyTorch, TensorFlow, Scikit-learn), and huge community. It's the #1 language for data science.",
+            "Python is the lingua franca of AI. Libraries like PyTorch and Scikit-learn abstract away mathematical complexity so engineers can focus on architecture and logic.",
+        ],
+        "category": "ai_knowledge",
+    },
+    "data_structures": {
+        "keywords": ["dictionary", "hash map", "hash table", "why dictionary", "data structures"],
+        "responses": [
+            "A dictionary (hash map) gives O(1) average-case lookup time. In contrast, searching a list is O(n). For a chatbot with hundreds of rules, dictionaries are the professional choice.",
+            "Hash maps store key-value pairs. The key is hashed to a memory address, enabling direct access without scanning. That's why we use responses.get(input, fallback) instead of if-elif chains.",
+        ],
+        "category": "technical",
+    },
+    "decodelabs": {
+        "keywords": ["decodelabs", "decode labs", "about decodelabs", "tell me about decodelabs"],
+        "responses": [
+            "DecodeLabs is an industrial AI training program. Batch 2026 interns build real projects — from rule-based chatbots (Project 1) to semantic search engines — creating a portfolio that speaks to employers.",
+            "DecodeLabs bridges university theory and industry practice. You don't just learn AI — you build it, break it, and ship it.",
+        ],
+        "category": "decodelabs",
+    },
+    "project1": {
+        "keywords": ["project 1", "project one", "what is project 1", "rule based chatbot project"],
+        "responses": [
+            "Project 1: Rule-Based AI Chatbot — your foundation. Master control flow, dictionaries, and the IPO model before stepping into probabilistic ML. No shortcuts — earn the badge first.",
+            "Project 1 is about understanding deterministic logic. Before you manage a probability engine (LLM), you must master the precision of a logic engine. That's the philosophy.",
+        ],
+        "category": "decodelabs",
+    },
+    "how_are_you": {
+        "keywords": ["how are you", "how are you doing", "you okay", "you good", "how do you feel"],
+        "responses": [
+            "Running at 100% uptime. No bugs in this session — yet.",
+            "I'm deterministic, so I'm always exactly as good as my code. Which means I'm doing great.",
+            "No feelings, just clean logic. But I appreciate you asking!",
+        ],
+        "category": "social",
+    },
+    "thanks": {
+        "keywords": ["thanks", "thank you", "thx", "ty", "cheers", "appreciate it"],
+        "responses": [
+            "You're welcome! That's what rule-based systems are for.",
+            "Anytime. Keep building!",
+            "Happy to help. Now get back to coding.",
+        ],
+        "category": "social",
+    },
+    "compliment": {
+        "keywords": ["you're great", "you're smart", "good bot", "nice", "awesome", "brilliant", "well done"],
+        "responses": [
+            "Thank you! I'm just a dictionary with ambition.",
+            "Appreciate it! All credit goes to the engineer who defined these rules.",
+            "I'm only as smart as the knowledge base behind me.",
+        ],
+        "category": "social",
+    },
+    "joke": {
+        "keywords": ["tell me a joke", "joke", "make me laugh", "say something funny"],
+        "responses": [
+            "Why do programmers prefer dark mode? Because light attracts bugs.",
+            "A SQL query walks into a bar, walks up to two tables and asks... 'Can I join you?'",
+            "There are only 10 types of people: those who understand binary and those who don't.",
+        ],
+        "category": "social",
+    },
+    "help": {
+        "keywords": ["help", "what can you do", "commands", "options", "menu"],
+        "responses": [None],
+        "category": "system",
+    },
+    "history": {
+        "keywords": ["history", "show history", "conversation history", "what did we talk about"],
+        "responses": [None],
+        "category": "system",
+    },
+    "stats": {
+        "keywords": ["stats", "statistics", "analytics", "session stats", "how many messages"],
+        "responses": [None],
+        "category": "system",
+    },
+    "nust_general": {
+        "keywords": ["nust", "what is nust", "tell me about nust", "nust university", "national university of sciences and technology"],
+        "responses": [
+            "NUST (National University of Sciences & Technology) is Pakistan's #1 ranked university, located in H-12 Islamabad. Established in 1991, it's ranked ~353 globally (THE) and #67 in Asia. It has 12,000+ students, 1,637 faculty, and a 707-acre campus.",
+            "NUST is Pakistan's premier public research university. Founded in 1991, it sits in Islamabad's H-12 sector. It's ranked #1 in Pakistan and top 370 globally. Known for engineering, CS, and tech — it attracts 60,000+ applicants for ~3,000 seats every year.",
+        ],
+        "category": "nust",
+    },
+    "nust_schools": {
+        "keywords": ["nust schools", "nust colleges", "nust departments", "nust faculties", "seecs", "smme", "nice", "ceme", "nbs", "s3h", "nust constituent schools"],
+        "responses": [
+            "NUST's key schools: SEECS (Electrical Engg & CS),MCS(military college of signals), SMME (Mechanical & Manufacturing), NICE (Civil Engg), CEME (military engineering, Rawalpindi), NBS (Business School), S3H (Social Sciences & Humanities), ASAB (Biosciences), SNS (Natural Sciences), SCME (Materials Engineering), CAE (Aeronautical, Risalpur).",
+            "Major NUST schools — SEECS: CS & EE (most competitive). SMME: Mechanical, Industrial, Materials. NICE: Civil & Environmental. NBS: BBA & MBA. ASAB: Biotech & Biosciences. CEME: Military College of Engineering (Rawalpindi). CAE: College of Aeronautical Engineering (Risalpur).",
+        ],
+        "category": "nust",
+    },
+    "nust_seecs": {
+        "keywords": ["seecs", "what is seecs", "nust seecs", "software engineering nust", "cs nust", "computer science nust", "electrical engineering nust"],
+        "responses": [
+            "SEECS (School of Electrical Engineering & Computer Science) is NUST's most competitive school. Programs: BS Software Engineering, BS Computer Science, BS Electrical Engineering, BS AI. It's Washington Accord & PEC accredited. Website: seecs.nust.edu.pk.",
+            "SEECS is the crown jewel of NUST — top CS and EE programs in Pakistan. Offers SE, CS, EE, and AI at undergrad level. Closing merit positions are among the tightest in Pakistan (SE closes around merit rank 273, CS around 461).",
+        ],
+        "category": "nust",
+    },
+    "nust_programs": {
+        "keywords": ["nust programs", "nust courses", "nust degrees", "nust undergraduate", "nust bs programs", "what programs does nust offer"],
+        "responses": [
+            "NUST offers 40+ undergraduate programs across: Engineering & Technology, Computing & IT, Life Sciences & Medicine, Natural Sciences, Social Sciences, Arts & Humanities, and Business & Management. Plus 60+ Masters and multiple PhD programs.",
+            "At undergrad level, popular NUST programs include: BS Software Engineering, BS CS, BS Electrical Engineering, BS Mechanical Engineering, BS Civil Engineering, BS Biotechnology, BBA, BS AI, BS Environmental Engineering, BS Aerospace Engineering.",
+        ],
+        "category": "nust",
+    },
+    "nust_admission": {
+        "keywords": ["nust admission", "how to get into nust", "nust entry test", "net", "nust net", "nust apply", "nust application", "nust eligibility"],
+        "responses": [
+            "NUST admission is through the NET (NUST Entry Test) — conducted 3 times a year (NET-1, NET-2, NET-3). Eligibility: min 60% in FSc Part-I. Competitive programs like SEECS effectively need 80%+. Apply at ugadmissions.nust.edu.pk.",
+            "To get into NUST: 1) Clear FSc Pre-Engineering/ICS with strong marks. 2) Register and sit the NET exam. 3) Merit is calculated as: NET score (75%) + FSc marks (15%) + Matric marks (10%). Apply online at nust.edu.pk/admissions.",
+        ],
+        "category": "nust",
+    },
+    "nust_merit": {
+        "keywords": ["nust merit", "nust aggregate", "nust merit formula", "nust merit calculation", "how is nust merit calculated", "nust closing merit"],
+        "responses": [
+            "NUST merit formula: NET Score x 0.75 + FSc % x 0.15 + Matric % x 0.10. Example: NET 90%, FSc 81.8%, Matric 88.2% gives aggregate 88.59%. Closing merit positions vary yearly. SE at SEECS closes around rank 273, CS around 461, Mech Engg around 814.",
+            "NUST aggregate = (NET x 75%) + (FSc x 15%) + (Matric x 10%). The NET score carries the most weight — focus your preparation there. Merit positions are published on the NUST portal after each NET series.",
+        ],
+        "category": "nust",
+    },
+    "nust_net_test": {
+        "keywords": ["net test", "net exam", "nust net syllabus", "net preparation", "how to prepare for net", "net past papers"],
+        "responses": [
+            "The NET (NUST Entry Test) covers: Mathematics, Physics, Chemistry/Biology (based on program), and English. For engineering/CS: focus on Maths and Physics. A score of 150+ out of 200 is generally considered competitive. Practice NET past papers — they follow predictable patterns.",
+            "NET prep tips: 1) Master FSc Maths and Physics concepts thoroughly. 2) Solve 5+ years of NET past papers. 3) Focus on MCQ speed — time management is critical. 4) For SEECS programs, aim for top 5% of test takers. Check nust.edu.pk for official sample papers.",
+        ],
+        "category": "nust",
+    },
+    "nust_ranking": {
+        "keywords": ["nust ranking", "nust world ranking", "nust qs ranking", "nust the ranking", "nust rank in pakistan", "is nust good"],
+        "responses": [
+            "NUST rankings 2025: #1 in Pakistan, #67 in Asia (THE), around #353 globally (Times Higher Education), top 500 QS World University Rankings. All engineering programs are Washington Accord and PEC accredited — internationally recognized degrees.",
+            "NUST is undisputedly Pakistan's top university for engineering and technology. Globally ranked around 353 (THE) and #67 in Asia. It's the only Pakistani university with a certified National Science & Technology Park (NSTP) — a full innovation ecosystem on campus.",
+        ],
+        "category": "nust",
+    },
+    "nust_campus": {
+        "keywords": ["nust campus", "nust location", "nust h12", "where is nust", "nust islamabad", "nust hostel", "nust facilities"],
+        "responses": [
+            "NUST's main campus is in H-12, Islamabad — a 707-acre state-of-the-art facility. It has hostels for boys and girls, a sports complex, library, medical center, cafeterias, and Pakistan's first IASP-certified Science & Technology Park (NSTP). Campuses also in Rawalpindi (CEME) and Risalpur (CAE).",
+            "The NUST H-12 campus spans 707 acres in Islamabad. Facilities include well-equipped labs, high-speed internet, on-campus housing, NSTP for startups and research, sports grounds, and a fully operational hospital. It's a self-contained university city.",
+        ],
+        "category": "nust",
+    },
+    "nust_fee": {
+        "keywords": ["nust fee", "nust tuition fee", "nust fee structure", "how much is nust fee", "nust scholarship", "nust financial aid"],
+        "responses": [
+            "NUST is a public university so fees are subsidized compared to private universities. Fee varies by school and program — engineering programs are higher than humanities. NUST offers need-based scholarships, HEC scholarships, and fee waivers. Check nust.edu.pk/admissions for the latest fee structure.",
+            "NUST fees are among the most affordable for the quality offered in Pakistan. Financial aid options include: NUST need-based scholarships, HEC need-based program, fee deferment, and Prime Minister's laptop scheme. Brilliant students with low income can study nearly free.",
+        ],
+        "category": "nust",
+    },
+    "nust_contact": {
+        "keywords": ["nust contact", "nust phone", "nust email", "nust website", "nust admissions contact", "contact nust"],
+        "responses": [
+            "NUST contact info — Website: nust.edu.pk | Admissions: ugadmissions.nust.edu.pk | Admissions email: admissions@nust.edu.pk | Phone: +92-51-90851400 | Address: H-12, Islamabad, Pakistan.",
+            "Reach NUST at: nust.edu.pk (main site), ugadmissions.nust.edu.pk (UG admissions portal), pgadmission.nust.edu.pk (postgrad). Admissions phone: +92-51-90851400. For school-specific queries, contact SEECS, SMME etc. directly through their sub-sites.",
+        ],
+        "category": "nust",
+    },
+    "farewell": {
+        "keywords": ["bye", "goodbye", "see you", "exit", "quit", "stop", "cya", "later"],
+        "responses": [
+            "Goodbye! Keep pushing those commits.",
+            "See you next session! You're one step closer to becoming a professional AI engineer.",
+            "Bye! Remember: every great AI product has a solid rule engine underneath.",
+        ],
+        "category": "social",
+    },
+}
+EXIT_KEYWORDS = {"bye", "goodbye", "exit", "quit", "stop", "cya", "later", "see you"}
+POSITIVE_WORDS = {"good", "great", "awesome", "nice", "love", "happy", "excellent", "amazing", "perfect"}
+NEGATIVE_WORDS = {"bad", "terrible", "hate", "awful", "horrible", "wrong", "broken", "useless", "stupid"}
+class ConversationMemory:
+    def __init__(self):
+        self.history = []
+        self.intent_counts = defaultdict(int)
+        self.start_time = datetime.now()
+        self.unknown_count = 0
+    def log(self, role, text, intent=""):
+        self.history.append({"role": role, "text": text, "intent": intent, "timestamp": datetime.now().strftime("%H:%M:%S")})
+        if intent:
+            self.intent_counts[intent] += 1
+    def get_session_duration(self):
+        delta = datetime.now() - self.start_time
+        m, s = divmod(int(delta.total_seconds()), 60)
+        return f"{m}m {s}s"
+    def total_messages(self):
+        return len([h for h in self.history if h["role"] == "user"])
+class InputProcessor:
+    ABBREVIATIONS = {
+        "u": "you", "r": "are", "ur": "your",
+        "wat": "what", "wht": "what", "cn": "can",
+        "plz": "please", "pls": "please", "lol": "",
+        "idk": "i don't know", "btw": "by the way",
+        "ai": "ai", "ml": "ml", "nlp": "nlp", "llm": "llm",
+    }
+    @staticmethod
+    def sanitize(raw):
+        return raw.lower().strip()
+    @staticmethod
+    def remove_punctuation(text):
+        return re.sub(r"[^\w\s']", "", text)
+    @classmethod
+    def expand_abbreviations(cls, text):
+        words = text.split()
+        expanded = [cls.ABBREVIATIONS.get(w, w) for w in words]
+        return " ".join(w for w in expanded if w)
+    @classmethod
+    def process(cls, raw):
+        text = cls.sanitize(raw)
+        text = cls.remove_punctuation(text)
+        text = cls.expand_abbreviations(text)
+        return text
+class IntentMatcher:
+    def __init__(self, knowledge_base):
+        self.keyword_index = {}
+        for intent_name, data in knowledge_base.items():
+            for keyword in data["keywords"]:
+                self.keyword_index[keyword] = intent_name
+    def match(self, clean_input):
+        if clean_input in self.keyword_index:
+            return self.keyword_index[clean_input], 1.0
+        for keyword, intent in self.keyword_index.items():
+            if keyword in clean_input or clean_input in keyword:
+                return intent, 0.8
+        input_words = set(clean_input.split())
+        best_intent, best_overlap = None, 0
+        for keyword, intent in self.keyword_index.items():
+            overlap = len(input_words & set(keyword.split()))
+            if overlap > best_overlap:
+                best_overlap = overlap
+                best_intent = intent
+        if best_overlap >= 2:
+            return best_intent, 0.5
+        return None, 0.0
+class SentimentAnalyzer:
+    @staticmethod
+    def analyze(text):
+        words = set(text.lower().split())
+        pos = len(words & POSITIVE_WORDS)
+        neg = len(words & NEGATIVE_WORDS)
+        if pos > neg:
+            return "positive"
+        elif neg > pos:
+            return "negative"
+        return "neutral"
+class ResponseEngine:
+    SENTIMENT_PREFIXES = {
+        "positive": ["Great energy! ", "Love the enthusiasm. ", ""],
+        "negative": ["I understand your frustration. ", "Let me help with that. ", ""],
+        "neutral": ["", "", ""],
+    }
+    FALLBACKS = [
+        "I don't have a rule for that yet. Try 'help' to see what I know.",
+        "That's outside my current knowledge base. Type 'help' for available topics.",
+        "Hmm, I couldn't match that. I'm rule-based — I only know what I'm taught. Try 'help'.",
+    ]
+    def __init__(self):
+        self._last_responses = {}
+    def generate(self, intent, confidence, sentiment, knowledge_base):
+        if intent is None or confidence == 0.0:
+            return random.choice(self.FALLBACKS)
+        responses = knowledge_base[intent]["responses"]
+        if responses[0] is None:
+            return "__SPECIAL__"
+        available = [r for r in responses if r != self._last_responses.get(intent)]
+        if not available:
+            available = responses
+        chosen = random.choice(available)
+        self._last_responses[intent] = chosen
+        if sentiment != "neutral" and random.random() < 0.3:
+            chosen = random.choice(self.SENTIMENT_PREFIXES[sentiment]) + chosen
+        return chosen
+class TerminalUI:
+    BOT_NAME = "DecoBot"
+    WIDTH = 60
+    @staticmethod
+    def clear_line():
+        sys.stdout.write("\r" + " " * 40 + "\r")
+        sys.stdout.flush()
+    @classmethod
+    def typing_animation(cls, duration=0.8):
+        frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+        end = time.time() + duration
+        i = 0
+        while time.time() < end:
+            sys.stdout.write(f"\r  {Color.CYAN}{frames[i % len(frames)]}{Color.RESET} {Color.DIM}DecoBot is thinking...{Color.RESET}")
+            sys.stdout.flush()
+            time.sleep(0.08)
+            i += 1
+        cls.clear_line()
+    @classmethod
+    def print_banner(cls):
+        print()
+        print(f"  {Color.CYAN}{'=' * (cls.WIDTH - 2)}{Color.RESET}")
+        print(f"  {Color.BOLD}{Color.CYAN}  DecoBot v2.0  —  DecodeLabs Batch 2026{Color.RESET}")
+        print(f"  {Color.DIM}  Rule-Based AI Chatbot  |  Project 1  |  Production Build{Color.RESET}")
+        print(f"  {Color.CYAN}{'=' * (cls.WIDTH - 2)}{Color.RESET}")
+        print(f"  {Color.GRAY}  Architecture : IPO Model  |  Lookup : O(1) Dictionary{Color.RESET}")
+        print(f"  {Color.GRAY}  Type 'help' for commands  |  Type 'exit' to quit{Color.RESET}")
+        print(f"  {Color.CYAN}{'-' * (cls.WIDTH - 2)}{Color.RESET}")
+        print()
+    @classmethod
+    def print_bot(cls, text, intent="", confidence=0.0):
+        timestamp = datetime.now().strftime("%H:%M")
+        conf_color = Color.GREEN if confidence >= 0.8 else (Color.YELLOW if confidence >= 0.5 else Color.RED)
+        conf_badge = f"{conf_color}[{int(confidence * 100)}% match]{Color.RESET}" if intent else ""
+        print(f"\n  {Color.CYAN}{Color.BOLD}{cls.BOT_NAME}{Color.RESET} {Color.GRAY}[{timestamp}]{Color.RESET} {conf_badge}")
+        words = text.split()
+        line, lines = [], []
+        for word in words:
+            line.append(word)
+            if len(" ".join(line)) > 70:
+                lines.append(" ".join(line[:-1]))
+                line = [word]
+        if line:
+            lines.append(" ".join(line))
+        for l in lines:
+            print(f"  {Color.WHITE}  {l}{Color.RESET}")
+    @classmethod
+    def print_help(cls):
+        print(f"\n  {Color.CYAN}{'-' * (cls.WIDTH - 2)}{Color.RESET}")
+        print(f"  {Color.BOLD}{Color.CYAN}  Available Topics{Color.RESET}")
+        print(f"  {Color.CYAN}{'-' * (cls.WIDTH - 2)}{Color.RESET}")
+        topics = [
+            ("AI & Tech", ["what is ai", "machine learning", "deep learning", "nlp", "llm", "python", "rule-based", "dictionary"]),
+            ("NUST", ["what is nust", "nust programs", "seecs", "nust admission", "nust merit", "net test", "nust ranking", "nust fee", "nust campus", "nust contact"]),
+            ("DecodeLabs", ["tell me about decodelabs", "what is project 1"]),
+            ("Small Talk", ["hello", "how are you", "tell me a joke", "thanks"]),
+            ("System", ["help", "history", "stats", "exit"]),
+        ]
+        for group, cmds in topics:
+            print(f"\n  {Color.YELLOW}  {group}{Color.RESET}")
+            for i in range(0, len(cmds), 2):
+                left = f"'{cmds[i]}'"
+                right = f"'{cmds[i+1]}'" if i + 1 < len(cmds) else ""
+                print(f"  {Color.GRAY}    {left:<35}{right}{Color.RESET}")
+        print(f"\n  {Color.CYAN}{'-' * (cls.WIDTH - 2)}{Color.RESET}\n")
+    @classmethod
+    def print_history(cls, memory):
+        print(f"\n  {Color.CYAN}{'-' * (cls.WIDTH - 2)}{Color.RESET}")
+        print(f"  {Color.BOLD}{Color.CYAN}  Conversation History{Color.RESET}")
+        print(f"  {Color.CYAN}{'-' * (cls.WIDTH - 2)}{Color.RESET}")
+        if not memory.history:
+            print(f"  {Color.GRAY}  No messages yet.{Color.RESET}")
+        else:
+            for entry in memory.history[-20:]:
+                role_color = Color.GREEN if entry["role"] == "user" else Color.CYAN
+                role_label = "You    " if entry["role"] == "user" else "DecoBot"
+                intent_tag = f" {Color.GRAY}[{entry['intent']}]{Color.RESET}" if entry.get("intent") else ""
+                print(f"  {Color.GRAY}[{entry['timestamp']}]{Color.RESET} {role_color}{role_label}{Color.RESET}{intent_tag}")
+                txt = entry["text"][:65] + "..." if len(entry["text"]) > 65 else entry["text"]
+                print(f"  {Color.DIM}         {txt}{Color.RESET}")
+        print(f"\n  {Color.CYAN}{'-' * (cls.WIDTH - 2)}{Color.RESET}\n")
+    @classmethod
+    def print_stats(cls, memory):
+        print(f"\n  {Color.CYAN}{'-' * (cls.WIDTH - 2)}{Color.RESET}")
+        print(f"  {Color.BOLD}{Color.CYAN}  Session Analytics{Color.RESET}")
+        print(f"  {Color.CYAN}{'-' * (cls.WIDTH - 2)}{Color.RESET}")
+        print(f"  {Color.GRAY}  Duration      :{Color.RESET} {memory.get_session_duration()}")
+        print(f"  {Color.GRAY}  User messages :{Color.RESET} {memory.total_messages()}")
+        print(f"  {Color.GRAY}  Unknown inputs:{Color.RESET} {Color.YELLOW}{memory.unknown_count}{Color.RESET}")
+        if memory.intent_counts:
+            top = sorted(memory.intent_counts.items(), key=lambda x: x[1], reverse=True)[:5]
+            print(f"  {Color.GRAY}  Top intents   :{Color.RESET}")
+            for intent, count in top:
+                bar = "█" * min(count * 2, 20)
+                print(f"  {Color.CYAN}    {intent:<20}{Color.RESET} {Color.GREEN}{bar}{Color.RESET} {count}")
+        print(f"\n  {Color.CYAN}{'-' * (cls.WIDTH - 2)}{Color.RESET}\n")
+    @classmethod
+    def print_farewell(cls, memory):
+        print()
+        print(f"  {Color.CYAN}{'=' * (cls.WIDTH - 2)}{Color.RESET}")
+        print(f"  {Color.BOLD}{Color.CYAN}  Session Complete  —  DecodeLabs{Color.RESET}")
+        print(f"  {Color.CYAN}{'=' * (cls.WIDTH - 2)}{Color.RESET}")
+        print(f"  {Color.GRAY}  Messages   : {memory.total_messages()}{Color.RESET}")
+        print(f"  {Color.GRAY}  Duration   : {memory.get_session_duration()}{Color.RESET}")
+        print(f"  {Color.GRAY}  Unknown Qs : {memory.unknown_count}{Color.RESET}")
+        print(f"  {Color.DIM}  Keep building. Your AI journey has just begun.{Color.RESET}")
+        print(f"  {Color.CYAN}{'=' * (cls.WIDTH - 2)}{Color.RESET}")
+        print()
+class DecoBot:
+    CONFIDENCE_THRESHOLD = 0.4
+    def __init__(self):
+        self.memory = ConversationMemory()
+        self.ui = TerminalUI()
+        self.processor = InputProcessor()
+        self.matcher = IntentMatcher(KNOWLEDGE_BASE)
+        self.engine = ResponseEngine()
+        self.sentiment = SentimentAnalyzer()
+        self.running = False
+    def _handle_special(self, intent):
+        if intent == "help":
+            self.ui.print_help()
+            return True
+        if intent == "history":
+            self.ui.print_history(self.memory)
+            return True
+        if intent == "stats":
+            self.ui.print_stats(self.memory)
+            return True
+        return False
+    def _is_exit(self, clean_input, intent):
+        return clean_input in EXIT_KEYWORDS or intent == "farewell"
+    def process_turn(self, raw_input):
+        clean_input = self.processor.process(raw_input)
+        if not clean_input:
+            return True
+        self.memory.log("user", raw_input)
+        intent, confidence = self.matcher.match(clean_input)
+        sentiment = self.sentiment.analyze(clean_input)
+        self.ui.typing_animation(duration=random.uniform(0.4, 0.9))
+        if self._is_exit(clean_input, intent):
+            farewell = random.choice(KNOWLEDGE_BASE["farewell"]["responses"])
+            self.ui.print_bot(farewell, intent="farewell", confidence=1.0)
+            self.memory.log("bot", farewell, intent="farewell")
+            return False
+        if intent and confidence >= self.CONFIDENCE_THRESHOLD:
+            if self._handle_special(intent):
+                self.memory.log("bot", f"[special:{intent}]", intent=intent)
+                return True
+            response = self.engine.generate(intent, confidence, sentiment, KNOWLEDGE_BASE)
+            self.ui.print_bot(response, intent=intent, confidence=confidence)
+            self.memory.log("bot", response, intent=intent)
+        else:
+            self.memory.unknown_count += 1
+            fallback = self.engine.generate(None, 0.0, sentiment, KNOWLEDGE_BASE)
+            self.ui.print_bot(fallback, confidence=0.0)
+            self.memory.log("bot", fallback, intent="unknown")
+        return True
+    def run(self):
+        self.ui.print_banner()
+        self.running = True
+        while self.running:
+            try:
+                print(f"\n  {Color.GREEN}You >{Color.RESET} ", end="")
+                raw = input().strip()
+                if not self.process_turn(raw):
+                    self.ui.print_farewell(self.memory)
+                    self.running = False
+            except KeyboardInterrupt:
+                print()
+                self.ui.print_bot("Caught a KeyboardInterrupt. Shutting down gracefully.")
+                self.ui.print_farewell(self.memory)
+                self.running = False
+            except EOFError:
+                self.running = False
+if __name__ == "__main__":
+    bot = DecoBot()
+    bot.run()
