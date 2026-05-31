@@ -9,4 +9,4 @@ Conversation memory, session history & stats
 Built With
 Python 3 — re, random, collections, datetime
 Part Of
-DecodeLabs Industrial AI Training Kit — Batch 2026 | Project 1ShareContentpdfScreen_Recording_2026-05-25_161416.mp4mp4import time
+DecodeLabs Industrial AI Training Kit — Batch 2026
